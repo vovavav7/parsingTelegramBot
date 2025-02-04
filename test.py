@@ -9,11 +9,10 @@ from aiogram.filters import Command
 import json
 import os
 import datetime
-
 import parsing_mobile_de
 import parsing_marktplaats_nl
 import parsing_autoscout24_nl
-
+from concurrent.futures import ThreadPoolExecutor
 
 API_TOKEN = os.getenv("botToken")
 bot = Bot(token=API_TOKEN)
@@ -23,6 +22,7 @@ dp = Dispatcher()
 settings_file = "user_settings.json"
 
 def get_cars_data(url, user_id):
+    """Синхронна функція для парсингу одного сайту."""
     with open(settings_file, 'r') as f:
         user_settings = json.load(f)
 
@@ -32,30 +32,40 @@ def get_cars_data(url, user_id):
     with open(settings_file, 'w') as f:
         json.dump(user_settings, f, indent=4)
 
-    if url.startswith("https://suchen.mobile.de"): new_cars = parsing_mobile_de.get_website_data(url, user_id)
-    elif url.startswith("https://www.marktplaats.nl"): new_cars = parsing_marktplaats_nl.get_website_data(url, user_id)
-    elif url.startswith("https://www.autoscout24.nl"): new_cars = parsing_autoscout24_nl.get_website_data(url, user_id)
+    if url.startswith("https://suchen.mobile.de"):
+        return parsing_mobile_de.get_website_data(url, user_id)
+    elif url.startswith("https://www.marktplaats.nl"):
+        return parsing_marktplaats_nl.get_website_data(url, user_id)
+    elif url.startswith("https://www.autoscout24.nl"):
+        return parsing_autoscout24_nl.get_website_data(url, user_id)
     
-    return new_cars
+    return []
 
 async def parse_website(user_id):
+    """Асинхронно парсить всі сайти для користувача."""
     try:
         with open(settings_file, 'r') as f:
             user_settings = json.load(f)
 
         urls = user_settings[str(user_id)]['urls']
 
-        for url in urls:
-            new_cars = get_cars_data(url, user_id)
+        loop = asyncio.get_running_loop()
+        new_cars_list = []
 
-            for car in new_cars:
-                name, price, kilometerage, year, acu, link = [i for i in car]
-                content = f"Ім'я: {name}\nЦіна: {price}\nПробіг: {kilometerage}\nРік: {year}\nПотужність: {acu}\nСилка: {link}"
+        with ThreadPoolExecutor() as executor:
+            tasks = [loop.run_in_executor(executor, get_cars_data, url, user_id) for url in urls]
+            results = await asyncio.gather(*tasks)
 
-                await bot.send_message(user_id, content)
+        for new_cars in results:
+            new_cars_list.extend(new_cars)
+
+        for car in new_cars_list:
+            name, price, kilometerage, year, acu, link = car
+            content = f"🚗 Ім'я: {name}\n💰 Ціна: {price}\n📏 Пробіг: {kilometerage}\n📅 Рік: {year}\n⚡ Потужність: {acu}\n🔗 Силка: {link}"
+            await bot.send_message(user_id, content)
 
     except Exception as e:
-        print(f"Помилка при парсингу для користувача {user_id}: {e}")
+        print(f"❌ Помилка при парсингу для користувача {user_id}: {e}")
 
 
 # Функція для виконання парсингу

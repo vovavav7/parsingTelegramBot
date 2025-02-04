@@ -2,9 +2,8 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 import time
 
-driver = webdriver.Chrome()
-
 def get_website_data(url):
+    driver = webdriver.Chrome()
     driver.get(url)
     time.sleep(3)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
